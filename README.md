@@ -4,17 +4,26 @@ A Next.js + TypeScript **client-side** recitation tracker MVP.
 
 ## Scope in this stability phase
 - Browser speech recognition (`SpeechRecognition`/`webkitSpeechRecognition`)
-- Phrase-based matching with improved Arabic normalization
-- Multi-chunk confirmation to reduce flicker
-- Confidence reinforcement + decay
-- Recovery mode with broader search and relock rules
-- Quran subset only:
-  - Surah 1 (Al-Fatihah)
-  - Surah 112 (Al-Ikhlas)
-  - Surah 113 (Al-Falaq)
-  - Surah 114 (An-Nas)
+- Quran subset only: Surah 1, 112, 113, 114
+- Reranked matcher with repeated-prefix disambiguation
+- Multi-chunk confirmation + confidence reinforcement/decay + recovery mode
+- Debug visibility for top candidates and scoring reasons
 
 No backend, no database, no paid APIs, no Whisper.
+
+## Matching behavior highlights
+The matcher now separates and scores these signals differently:
+- exact normalized ayah match (strongest)
+- start-of-ayah prefix match
+- longer prefix continuation
+- phrase match at ayah start vs internal phrase containment
+- mismatch penalty after shared prefix divergence
+- ambiguity penalty for common short phrases
+- moderate context bonus (current/next/previous), not dominant
+
+This helps disambiguate repeated-prefix cases such as:
+- `1:1` vs `1:3` for `الرحمن الرحيم`
+- `113:3` vs `113:5` when openings partially overlap
 
 ## Run
 ```bash

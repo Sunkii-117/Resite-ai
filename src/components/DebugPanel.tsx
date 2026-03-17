@@ -1,3 +1,5 @@
+import { RankedCandidate } from '@/lib/quran/types';
+
 type DebugPanelProps = {
   recognizedText: string;
   normalizedText: string;
@@ -6,6 +8,7 @@ type DebugPanelProps = {
   source: string;
   isRecovering: boolean;
   recentCandidatesSummary: string;
+  topCandidates: RankedCandidate[];
 };
 
 export function DebugPanel({
@@ -16,6 +19,7 @@ export function DebugPanel({
   source,
   isRecovering,
   recentCandidatesSummary,
+  topCandidates,
 }: DebugPanelProps) {
   return (
     <section style={{ marginTop: '1rem', border: '1px dashed #d1d5db', borderRadius: 10, padding: '0.85rem', background: '#f9fafb' }}>
@@ -27,6 +31,20 @@ export function DebugPanel({
       <p><strong>Tracker Source:</strong> {source}</p>
       <p><strong>Recovery Mode:</strong> {isRecovering ? 'ON' : 'OFF'}</p>
       <p><strong>Recent Candidates:</strong> {recentCandidatesSummary || '—'}</p>
+      <div>
+        <strong>Top Candidates:</strong>
+        {topCandidates.length === 0 ? (
+          <p>—</p>
+        ) : (
+          <ol style={{ marginTop: '0.4rem' }}>
+            {topCandidates.map((candidate) => (
+              <li key={candidate.ayahId}>
+                {candidate.ayahId} — score {candidate.score.toFixed(2)} ({candidate.reason})
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
     </section>
   );
 }

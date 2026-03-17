@@ -1,12 +1,12 @@
 import { matchTranscriptToAyah } from './phraseMatcher';
 import { Ayah, CandidateSnapshot, MatchResult, PhraseIndex, TrackerState } from './types';
 
-const DECAY_RATE = 0.05;
-const REINFORCE_RATE = 0.09;
-const ENTER_RECOVERY_THRESHOLD = 0.42;
-const RECOVERY_RELOCK_THRESHOLD = 0.8;
-const MIN_CONFIDENCE = 0.18;
-const SIGNIFICANT_MARGIN = 0.24;
+const DECAY_RATE = 0.045;
+const REINFORCE_RATE = 0.1;
+const ENTER_RECOVERY_THRESHOLD = 0.4;
+const RECOVERY_RELOCK_THRESHOLD = 0.76;
+const MIN_CONFIDENCE = 0.16;
+const SWITCH_MARGIN = 0.14;
 
 function idxById(ayahs: Ayah[], ayahId: string): number {
   return ayahs.findIndex((a) => a.ayah_id === ayahId);
@@ -30,20 +30,24 @@ export function trackAyah(
   const current = ayahs[currentIndex];
   const next = ayahs[currentIndex + 1];
   const previous = ayahs[currentIndex - 1];
+  const contextAyahIds = [current?.ayah_id, next?.ayah_id, previous?.ayah_id].filter(Boolean) as string[];
 
-  const scopedIds = [current?.ayah_id, next?.ayah_id, previous?.ayah_id].filter(Boolean) as string[];
-  const scopedMatch = matchTranscriptToAyah(transcript, phraseIndex, scopedIds);
+  const scopedMatch = matchTranscriptToAyah({ transcript, ayahs, phraseIndex, contextAyahIds });
+  const top = scopedMatch.topCandidates;
 
-  let proposed: CandidateSnapshot = {
-    ayahId: scopedMatch.ayahId,
-    confidence: scopedMatch.confidence,
-    source: scopedMatch.ayahId === current?.ayah_id
+  const winning = top[0];
+  const currentCandidate = top.find((c) => c.ayahId === state.currentAyahId);
+
+  const proposed: CandidateSnapshot = {
+    ayahId: winning?.ayahId ?? null,
+    confidence: winning?.confidence ?? 0,
+    source: winning?.ayahId === current?.ayah_id
       ? 'current'
-      : scopedMatch.ayahId === next?.ayah_id
+      : winning?.ayahId === next?.ayah_id
         ? 'next'
-        : scopedMatch.ayahId === previous?.ayah_id
+        : winning?.ayahId === previous?.ayah_id
           ? 'previous'
-          : 'none',
+          : 'global',
   };
 
   let recentCandidates = appendCandidate(state.recentCandidates, proposed);
@@ -52,24 +56,27 @@ export function trackAyah(
   let source: MatchResult['source'] = state.source;
   let isRecovering = state.isRecovering;
 
-  const supportsCurrent = proposed.ayahId === state.currentAyahId && proposed.confidence > 0;
-
-  if (supportsCurrent) {
-    confidence = Math.min(1, confidence + REINFORCE_RATE * proposed.confidence);
+  if (winning && winning.ayahId === currentAyahId) {
+    confidence = Math.min(1, confidence + REINFORCE_RATE * Math.max(winning.confidence, 0.45));
     source = 'current';
-  } else {
-    const canSwitchByConsensus = proposed.ayahId ? appearsTwiceInLastThree(proposed.ayahId, recentCandidates) : false;
-    const canSwitchByStrength = proposed.ayahId ? proposed.confidence >= confidence + SIGNIFICANT_MARGIN : false;
+  } else if (winning) {
+    const consensus = appearsTwiceInLastThree(winning.ayahId, recentCandidates);
+    const currentScore = currentCandidate?.score ?? 0;
+    const clearScoreWin = winning.score >= currentScore + SWITCH_MARGIN;
+    const exactOrStrongPrefix = winning.source === 'exact' || winning.reason.includes('prefix:');
 
-    if (proposed.ayahId && (canSwitchByConsensus || canSwitchByStrength)) {
-      currentAyahId = proposed.ayahId;
-      confidence = Math.max(proposed.confidence, confidence * 0.75);
+    if (consensus || (clearScoreWin && exactOrStrongPrefix) || winning.confidence >= 0.86) {
+      currentAyahId = winning.ayahId;
+      confidence = Math.max(winning.confidence, confidence * 0.78);
       source = proposed.source;
       isRecovering = false;
     } else {
       confidence = Math.max(MIN_CONFIDENCE, confidence - DECAY_RATE);
       source = 'none';
     }
+  } else {
+    confidence = Math.max(MIN_CONFIDENCE, confidence - DECAY_RATE);
+    source = 'none';
   }
 
   if (confidence < ENTER_RECOVERY_THRESHOLD) {
@@ -77,24 +84,28 @@ export function trackAyah(
   }
 
   if (isRecovering) {
-    const globalMatch = matchTranscriptToAyah(transcript, phraseIndex);
-    const recoveryCandidate: CandidateSnapshot = {
-      ayahId: globalMatch.ayahId,
-      confidence: globalMatch.confidence,
-      source: 'recovery',
-    };
-    recentCandidates = appendCandidate(recentCandidates, recoveryCandidate);
+    const recovery = matchTranscriptToAyah({ transcript, ayahs, phraseIndex });
+    const recoveryWinner = recovery.topCandidates[0];
 
-    const relockByConsensus = globalMatch.ayahId ? appearsTwiceInLastThree(globalMatch.ayahId, recentCandidates) : false;
-    const relockByStrength = globalMatch.confidence >= 0.92;
+    if (recoveryWinner) {
+      const recoverySnapshot: CandidateSnapshot = {
+        ayahId: recoveryWinner.ayahId,
+        confidence: recoveryWinner.confidence,
+        source: 'recovery',
+      };
+      recentCandidates = appendCandidate(recentCandidates, recoverySnapshot);
 
-    if (globalMatch.ayahId && globalMatch.confidence >= RECOVERY_RELOCK_THRESHOLD && (relockByConsensus || relockByStrength)) {
-      currentAyahId = globalMatch.ayahId;
-      confidence = globalMatch.confidence;
-      source = 'recovery';
-      isRecovering = false;
-    } else {
-      confidence = Math.max(MIN_CONFIDENCE, confidence - DECAY_RATE / 2);
+      const relockConsensus = appearsTwiceInLastThree(recoveryWinner.ayahId, recentCandidates);
+      const strongRelock = recoveryWinner.confidence >= 0.9 || recoveryWinner.source === 'exact';
+
+      if (recoveryWinner.confidence >= RECOVERY_RELOCK_THRESHOLD && (relockConsensus || strongRelock)) {
+        currentAyahId = recoveryWinner.ayahId;
+        confidence = recoveryWinner.confidence;
+        source = 'recovery';
+        isRecovering = false;
+      } else {
+        confidence = Math.max(MIN_CONFIDENCE, confidence - DECAY_RATE / 2);
+      }
     }
   }
 
@@ -104,6 +115,7 @@ export function trackAyah(
     source,
     recentCandidates,
     isRecovering,
+    topCandidates: top,
   };
 
   return {
@@ -112,7 +124,8 @@ export function trackAyah(
       ayahId: currentAyahId,
       confidence: nextState.confidence,
       source,
-      phrase: scopedMatch.phrase,
+      phrase: winning?.reason,
+      topCandidates: top,
     },
   };
 }

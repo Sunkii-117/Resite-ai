@@ -22,6 +22,7 @@ export default function HomePage() {
     source: 'none',
     recentCandidates: [],
     isRecovering: false,
+    topCandidates: [],
   });
 
   const recognizerRef = useRef<BrowserSpeechRecognizer | null>(null);
@@ -74,7 +75,7 @@ export default function HomePage() {
 
   return (
     <main style={{ maxWidth: 860, margin: '2rem auto', padding: '0 1rem' }}>
-      <h1 style={{ textAlign: 'center' }}>Resite MVP — Stability Phase (1, 112, 113, 114)</h1>
+      <h1 style={{ textAlign: 'center' }}>Resite MVP — Stable Small-Surah Tracker</h1>
       <ControlBar
         listening={listening}
         statusMessage={statusMessage}
@@ -93,6 +94,7 @@ export default function HomePage() {
         source={trackerState.source}
         isRecovering={trackerState.isRecovering}
         recentCandidatesSummary={recentSummary}
+        topCandidates={trackerState.topCandidates}
       />
 
       <p style={{ marginTop: '1rem', color: '#4b5563', fontSize: '0.9rem' }}>
