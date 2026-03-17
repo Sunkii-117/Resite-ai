@@ -1,10 +1,23 @@
 import { matchTranscriptToAyah } from './phraseMatcher';
-import { Ayah, MatchResult, PhraseIndex, TrackerState } from './types';
+import { Ayah, CandidateSnapshot, MatchResult, PhraseIndex, TrackerState } from './types';
 
-const MIN_CONFIDENCE_TO_SWITCH = 0.7;
+const DECAY_RATE = 0.05;
+const REINFORCE_RATE = 0.09;
+const ENTER_RECOVERY_THRESHOLD = 0.42;
+const RECOVERY_RELOCK_THRESHOLD = 0.8;
+const MIN_CONFIDENCE = 0.18;
+const SIGNIFICANT_MARGIN = 0.24;
 
 function idxById(ayahs: Ayah[], ayahId: string): number {
   return ayahs.findIndex((a) => a.ayah_id === ayahId);
+}
+
+function appendCandidate(history: CandidateSnapshot[], next: CandidateSnapshot): CandidateSnapshot[] {
+  return [...history.slice(-2), next];
+}
+
+function appearsTwiceInLastThree(ayahId: string, history: CandidateSnapshot[]): boolean {
+  return history.filter((entry) => entry.ayahId === ayahId).length >= 2;
 }
 
 export function trackAyah(
@@ -18,45 +31,88 @@ export function trackAyah(
   const next = ayahs[currentIndex + 1];
   const previous = ayahs[currentIndex - 1];
 
-  const scoped = [current?.ayah_id, next?.ayah_id, previous?.ayah_id].filter(Boolean) as string[];
+  const scopedIds = [current?.ayah_id, next?.ayah_id, previous?.ayah_id].filter(Boolean) as string[];
+  const scopedMatch = matchTranscriptToAyah(transcript, phraseIndex, scopedIds);
 
-  const scopedMatch = matchTranscriptToAyah(transcript, phraseIndex, scoped);
+  let proposed: CandidateSnapshot = {
+    ayahId: scopedMatch.ayahId,
+    confidence: scopedMatch.confidence,
+    source: scopedMatch.ayahId === current?.ayah_id
+      ? 'current'
+      : scopedMatch.ayahId === next?.ayah_id
+        ? 'next'
+        : scopedMatch.ayahId === previous?.ayah_id
+          ? 'previous'
+          : 'none',
+  };
 
-  if (scopedMatch.ayahId && scopedMatch.confidence >= MIN_CONFIDENCE_TO_SWITCH) {
-    let source: MatchResult['source'] = 'current';
-    if (scopedMatch.ayahId === next?.ayah_id) source = 'next';
-    else if (scopedMatch.ayahId === previous?.ayah_id) source = 'previous';
+  let recentCandidates = appendCandidate(state.recentCandidates, proposed);
+  let confidence = state.confidence;
+  let currentAyahId = state.currentAyahId;
+  let source: MatchResult['source'] = state.source;
+  let isRecovering = state.isRecovering;
 
-    const keepCurrent = source === 'current' && scopedMatch.confidence < 0.86;
-    if (!keepCurrent) {
-      return {
-        state: {
-          currentAyahId: scopedMatch.ayahId,
-          confidence: scopedMatch.confidence,
-          source,
-        },
-        match: { ...scopedMatch, source },
-      };
+  const supportsCurrent = proposed.ayahId === state.currentAyahId && proposed.confidence > 0;
+
+  if (supportsCurrent) {
+    confidence = Math.min(1, confidence + REINFORCE_RATE * proposed.confidence);
+    source = 'current';
+  } else {
+    const canSwitchByConsensus = proposed.ayahId ? appearsTwiceInLastThree(proposed.ayahId, recentCandidates) : false;
+    const canSwitchByStrength = proposed.ayahId ? proposed.confidence >= confidence + SIGNIFICANT_MARGIN : false;
+
+    if (proposed.ayahId && (canSwitchByConsensus || canSwitchByStrength)) {
+      currentAyahId = proposed.ayahId;
+      confidence = Math.max(proposed.confidence, confidence * 0.75);
+      source = proposed.source;
+      isRecovering = false;
+    } else {
+      confidence = Math.max(MIN_CONFIDENCE, confidence - DECAY_RATE);
+      source = 'none';
     }
   }
 
-  const globalMatch = matchTranscriptToAyah(transcript, phraseIndex);
-  if (globalMatch.ayahId && globalMatch.confidence >= 0.86) {
-    return {
-      state: {
-        currentAyahId: globalMatch.ayahId,
-        confidence: globalMatch.confidence,
-        source: 'global',
-      },
-      match: { ...globalMatch, source: 'global' },
-    };
+  if (confidence < ENTER_RECOVERY_THRESHOLD) {
+    isRecovering = true;
   }
 
+  if (isRecovering) {
+    const globalMatch = matchTranscriptToAyah(transcript, phraseIndex);
+    const recoveryCandidate: CandidateSnapshot = {
+      ayahId: globalMatch.ayahId,
+      confidence: globalMatch.confidence,
+      source: 'recovery',
+    };
+    recentCandidates = appendCandidate(recentCandidates, recoveryCandidate);
+
+    const relockByConsensus = globalMatch.ayahId ? appearsTwiceInLastThree(globalMatch.ayahId, recentCandidates) : false;
+    const relockByStrength = globalMatch.confidence >= 0.92;
+
+    if (globalMatch.ayahId && globalMatch.confidence >= RECOVERY_RELOCK_THRESHOLD && (relockByConsensus || relockByStrength)) {
+      currentAyahId = globalMatch.ayahId;
+      confidence = globalMatch.confidence;
+      source = 'recovery';
+      isRecovering = false;
+    } else {
+      confidence = Math.max(MIN_CONFIDENCE, confidence - DECAY_RATE / 2);
+    }
+  }
+
+  const nextState: TrackerState = {
+    currentAyahId,
+    confidence: Number(confidence.toFixed(2)),
+    source,
+    recentCandidates,
+    isRecovering,
+  };
+
   return {
-    state: {
-      ...state,
-      confidence: Math.max(state.confidence - 0.03, 0.4),
+    state: nextState,
+    match: {
+      ayahId: currentAyahId,
+      confidence: nextState.confidence,
+      source,
+      phrase: scopedMatch.phrase,
     },
-    match: { ayahId: state.currentAyahId, confidence: state.confidence, source: 'none' },
   };
 }

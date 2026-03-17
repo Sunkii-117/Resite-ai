@@ -11,12 +11,20 @@ export type PhraseIndex = Record<string, string[]>;
 export type MatchResult = {
   ayahId: string | null;
   confidence: number;
-  source: 'current' | 'next' | 'previous' | 'global' | 'none';
+  source: 'current' | 'next' | 'previous' | 'global' | 'recovery' | 'none';
   phrase?: string;
+};
+
+export type CandidateSnapshot = {
+  ayahId: string | null;
+  confidence: number;
+  source: MatchResult['source'];
 };
 
 export type TrackerState = {
   currentAyahId: string;
   confidence: number;
   source: MatchResult['source'];
+  recentCandidates: CandidateSnapshot[];
+  isRecovering: boolean;
 };

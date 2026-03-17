@@ -20,17 +20,19 @@ export default function HomePage() {
     currentAyahId: '1:1',
     confidence: 0.6,
     source: 'none',
+    recentCandidates: [],
+    isRecovering: false,
   });
 
   const recognizerRef = useRef<BrowserSpeechRecognizer | null>(null);
 
   useEffect(() => {
     async function loadData() {
-      const [fatihahRes, phraseRes] = await Promise.all([
-        fetch('/quran/fatihah.json'),
-        fetch('/quran/fatihah_phrase_index.json'),
+      const [quranRes, phraseRes] = await Promise.all([
+        fetch('/quran/mvp_quran.json'),
+        fetch('/quran/mvp_phrase_index.json'),
       ]);
-      setAyahs(await fatihahRes.json());
+      setAyahs(await quranRes.json());
       setPhraseIndex(await phraseRes.json());
     }
 
@@ -66,10 +68,13 @@ export default function HomePage() {
   const nextAyah = currentIndex >= 0 ? ayahs[currentIndex + 1] : undefined;
 
   const supported = typeof window !== 'undefined' ? Boolean(window.SpeechRecognition || window.webkitSpeechRecognition) : false;
+  const recentSummary = trackerState.recentCandidates
+    .map((c) => `${c.ayahId ?? '—'}:${c.confidence.toFixed(2)}`)
+    .join(' | ');
 
   return (
     <main style={{ maxWidth: 860, margin: '2rem auto', padding: '0 1rem' }}>
-      <h1 style={{ textAlign: 'center' }}>Resite MVP — Al-Fatihah Follow Along</h1>
+      <h1 style={{ textAlign: 'center' }}>Resite MVP — Stability Phase (1, 112, 113, 114)</h1>
       <ControlBar
         listening={listening}
         statusMessage={statusMessage}
@@ -85,6 +90,9 @@ export default function HomePage() {
         normalizedText={normalizedText}
         matchedAyah={trackerState.currentAyahId}
         confidence={trackerState.confidence}
+        source={trackerState.source}
+        isRecovering={trackerState.isRecovering}
+        recentCandidatesSummary={recentSummary}
       />
 
       <p style={{ marginTop: '1rem', color: '#4b5563', fontSize: '0.9rem' }}>

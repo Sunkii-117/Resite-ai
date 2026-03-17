@@ -1,24 +1,25 @@
 # Resite MVP (Client-side)
 
-A simple Next.js + TypeScript MVP for **Al-Fatihah follow-along**.
+A Next.js + TypeScript **client-side** recitation tracker MVP.
 
-It listens to microphone input using browser speech recognition, matches recognized Arabic phrases to Al-Fatihah ayahs, and displays:
-- previous ayah (faded)
-- current ayah (prominent)
-- next ayah (faded)
-- English translation for the current ayah
-- debug details (recognized text, normalized text, matched ayah, confidence)
+## Scope in this stability phase
+- Browser speech recognition (`SpeechRecognition`/`webkitSpeechRecognition`)
+- Phrase-based matching with improved Arabic normalization
+- Multi-chunk confirmation to reduce flicker
+- Confidence reinforcement + decay
+- Recovery mode with broader search and relock rules
+- Quran subset only:
+  - Surah 1 (Al-Fatihah)
+  - Surah 112 (Al-Ikhlas)
+  - Surah 113 (Al-Falaq)
+  - Surah 114 (An-Nas)
 
-## Scope
-- Client-side only (no backend, no database)
-- Surah Al-Fatihah only
-- No tajweed/mistake detection
-- No Whisper integration (yet)
+No backend, no database, no paid APIs, no Whisper.
 
-## Setup
+## Run
 ```bash
 npm install
-npm run build:fatihah
+npm run build:mvp-quran
 npm run dev
 ```
 
@@ -30,7 +31,11 @@ npm run build
 npm run start
 ```
 
-This project is ready for free deployment on Vercel.
+Ready for free Vercel deployment.
 
-## Browser support note
-Speech recognition quality and availability depend on browser support. Chromium-based browsers typically work best for `SpeechRecognition`/`webkitSpeechRecognition`.
+## Data files
+- `public/quran/mvp_quran.json`
+- `public/quran/mvp_phrase_index.json`
+
+## Notes
+Speech recognition quality depends heavily on browser support and microphone conditions. Chromium-based browsers usually perform best.

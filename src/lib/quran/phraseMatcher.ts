@@ -22,7 +22,9 @@ export function matchTranscriptToAyah(
   }
 
   const ngrams = getNGrams(tokens, [3, 2]);
-  let best: MatchResult = { ayahId: null, confidence: 0, source: 'none' };
+  const scores: Record<string, number> = {};
+  let bestPhrase = '';
+  let bestPhraseWeight = 0;
 
   for (const phrase of ngrams) {
     const ayahIds = phraseIndex[phrase] || [];
@@ -31,11 +33,30 @@ export function matchTranscriptToAyah(
     const filtered = candidateAyahIds ? ayahIds.filter((id) => candidateAyahIds.includes(id)) : ayahIds;
     if (!filtered.length) continue;
 
-    const confidence = phrase.split(' ').length === 3 ? 0.88 : 0.72;
-    if (confidence > best.confidence) {
-      best = { ayahId: filtered[0], confidence, source: 'global', phrase };
+    const phraseWeight = phrase.split(' ').length === 3 ? 0.34 : 0.22;
+
+    for (const ayahId of filtered) {
+      scores[ayahId] = (scores[ayahId] || 0) + phraseWeight;
+    }
+
+    if (phraseWeight > bestPhraseWeight) {
+      bestPhraseWeight = phraseWeight;
+      bestPhrase = phrase;
     }
   }
 
-  return best;
+  const ranked = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+  if (!ranked.length) {
+    return { ayahId: null, confidence: 0, source: 'none' };
+  }
+
+  const [bestAyah, rawScore] = ranked[0];
+  const confidence = Math.min(0.95, Number(rawScore.toFixed(2)));
+
+  return {
+    ayahId: bestAyah,
+    confidence,
+    source: 'global',
+    phrase: bestPhrase,
+  };
 }

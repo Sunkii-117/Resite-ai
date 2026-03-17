@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "build:fatihah": "node scripts/buildFatihahData.js"
+    "build:mvp-quran": "node scripts/buildMvpQuranData.js"
   },
   "dependencies": {
     "next": "14.2.5",
